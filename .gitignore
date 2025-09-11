@@ -15,6 +15,7 @@ desktop.ini
 .pnp.*
 .parcel-cache/
 .cache/
+/node_modules/
 
 # Test tools & storybook
 coverage/
