@@ -640,6 +640,30 @@ const App = () => {
             );
         }, 0);
     }, []);
+
+    const handleUpdateClosetLayout = useCallback((floorId, layoutItems) => {
+        setData(prev => ({
+            ...prev,
+            closetLayouts: {
+                ...prev.closetLayouts,
+                [floorId]: layoutItems
+            }
+        }));
+
+        // Log closet layout update activity
+        setTimeout(() => {
+            logActivity(
+                setData,
+                'Closet layout updated for floor ID: "' + floorId + '" (' + layoutItems.length + ' items)',
+                'closet_layout_update',
+                {
+                    floorId,
+                    layoutItems,
+                    itemCount: layoutItems.length
+                }
+            );
+        }, 0);
+    }, []);
     
     const handleUserCreate = useCallback((userName) => {
         const newUser = { id: `u-${Date.now()}`, name: userName.trim() };
@@ -889,6 +913,7 @@ const App = () => {
                         handleModalOpen({type: 'connection', mode: 'edit', portId: connection.wallPortId, fromSwitch: true});
                     }}
                     onUpdateSwitch={handleUpdateSwitch}
+                    onUpdateClosetLayout={handleUpdateClosetLayout}
                     selectedFloorId={selectedFloorId} 
                     setSelectedFloorId={setSelectedFloorId} 
                 />;

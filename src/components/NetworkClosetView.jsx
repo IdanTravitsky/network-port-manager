@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Move, Grid, Plus, Minus, GripVertical, ChevronDown, Building2, Server, Waypoints } from 'lucide-react';
+import { Settings, Move, Grid, Plus, Minus, GripVertical, ChevronDown, Building2, Server, Waypoints, Edit } from 'lucide-react';
 import SwitchPort from './SwitchPort.jsx';
+import ClosetLayoutModal from './ClosetLayoutModal.jsx';
 
 // Helper function to calculate switch port layout (copied from SwitchView)
 const calculateSwitchPortLayout = (switchData, layoutTemplate) => {
@@ -55,6 +56,7 @@ const NetworkClosetView = ({
     onDisconnect, 
     onNavigateToSwitch,
     onUpdateSwitch,
+    onUpdateClosetLayout,
     selectedFloorId, 
     setSelectedFloorId 
 }) => {
@@ -65,6 +67,7 @@ const NetworkClosetView = ({
 
     const [draggedItem, setDraggedItem] = useState(null);
     const [showFloorSelector, setShowFloorSelector] = useState(false);
+    const [showLayoutModal, setShowLayoutModal] = useState(false);
 
     // Get current floor data
     const currentFloor = maps.floors.get(selectedFloorId);
@@ -194,6 +197,12 @@ const NetworkClosetView = ({
             ...prev,
             wallPortsPerRow: Math.max(1, Math.min(50, newCount))
         }));
+    };
+
+    const handleSaveLayout = (floorId, layoutItems) => {
+        if (onUpdateClosetLayout) {
+            onUpdateClosetLayout(floorId, layoutItems);
+        }
     };
 
     const WallPortPanel = ({ wallPortData, portsPerRow, onEditConnection }) => {
@@ -355,6 +364,15 @@ const NetworkClosetView = ({
                 </div>
                 
                 <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => setShowLayoutModal(true)}
+                        className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-600 text-slate-300 transition-colors"
+                        disabled={!selectedFloorId}
+                    >
+                        <Edit size={16} />
+                        Edit Layout
+                    </button>
+                    
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-slate-400">Ports per row:</span>
                         <button
@@ -473,6 +491,15 @@ const NetworkClosetView = ({
                     </div>
                 </>
             )}
+            
+            <ClosetLayoutModal
+                isOpen={showLayoutModal}
+                onClose={() => setShowLayoutModal(false)}
+                floorId={selectedFloorId}
+                currentLayout={data.closetLayouts?.[selectedFloorId] || []}
+                availableSwitches={data.switches}
+                onSave={handleSaveLayout}
+            />
         </div>
     );
 };
