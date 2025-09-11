@@ -11,6 +11,7 @@ const VirtualScrollTable = ({
 }) => {
     const [scrollTop, setScrollTop] = useState(0);
     const containerRef = useRef(null);
+    const scrollRef = useRef(null);
     
     const totalHeight = items.length * rowHeight;
     
@@ -36,7 +37,13 @@ const VirtualScrollTable = ({
     // Handle scroll with throttling
     const handleScroll = useCallback((e) => {
         const newScrollTop = e.target.scrollTop;
-        setScrollTop(newScrollTop);
+        // Simple throttling using requestAnimationFrame
+        if (!scrollRef.current) {
+            scrollRef.current = requestAnimationFrame(() => {
+                setScrollTop(newScrollTop);
+                scrollRef.current = null;
+            });
+        }
     }, []);
     
     // Scroll to specific item - available for future use

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronsUpDown, Plus, Check } from 'lucide-react';
+import { ChevronsUpDown, Plus, Check, Edit2 } from 'lucide-react';
 
-const CustomSelect = ({ options, value, onChange, placeholder, isCreatable = false, onCreate = () => {} }) => {
+const CustomSelect = ({ options, value, onChange, placeholder, isCreatable = false, onCreate = () => {}, isRenameable = false, onRename = () => {} }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [inputValue, setInputValue] = useState('');
+    const [renamingId, setRenamingId] = useState(null);
+    const [renameValue, setRenameValue] = useState('');
     const wrapperRef = useRef(null);
 
     useEffect(() => {
@@ -40,6 +42,24 @@ const CustomSelect = ({ options, value, onChange, placeholder, isCreatable = fal
         setIsOpen(false);
     };
 
+    const handleStartRename = (optionValue, currentLabel) => {
+        setRenamingId(optionValue);
+        setRenameValue(currentLabel);
+    };
+
+    const handleSaveRename = () => {
+        if (renameValue.trim() && renameValue !== options.find(opt => opt.value === renamingId)?.label) {
+            onRename(renamingId, renameValue.trim());
+        }
+        setRenamingId(null);
+        setRenameValue('');
+    };
+
+    const handleCancelRename = () => {
+        setRenamingId(null);
+        setRenameValue('');
+    };
+
     return (
         <div ref={wrapperRef} className="relative w-full">
             <div className="relative">
@@ -59,16 +79,69 @@ const CustomSelect = ({ options, value, onChange, placeholder, isCreatable = fal
 
             {isOpen && (
                 <div className="dropdown-container absolute w-full mt-1" style={{ zIndex: 999999 }}>
-                    <ul className="bg-slate-700 border border-slate-600 rounded-md max-h-60 overflow-auto shadow-xl">
+                    <ul className="search-dropdown max-h-60 overflow-auto">
                         {isCreatable && canCreate && (
-                            <li onClick={handleCreate} className="px-3 py-2 bg-cyan-700 hover:bg-cyan-600 cursor-pointer flex items-center gap-2">
+                            <li onClick={handleCreate} className="px-3 py-2 cursor-pointer flex items-center gap-2" style={{ background: 'var(--primary)', color: 'white' }}>
                                 <Plus size={16}/> Create "{inputValue}"
                             </li>
                         )}
                         {filteredOptions.map(opt => (
-                            <li key={opt.value} onClick={() => handleSelect(opt.value)} className="px-3 py-2 hover:bg-cyan-600 cursor-pointer flex justify-between items-center">
-                                {opt.label}
-                                {value === opt.value && <Check size={16} />}
+                            <li key={opt.value} className="search-result-item px-3 py-2 flex justify-between items-center">
+                                {renamingId === opt.value ? (
+                                    <div className="flex items-center gap-2 w-full">
+                                        <input
+                                            type="text"
+                                            value={renameValue}
+                                            onChange={(e) => setRenameValue(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') handleSaveRename();
+                                                if (e.key === 'Escape') handleCancelRename();
+                                            }}
+                                            className="input-style flex-1 py-1 px-2 text-sm"
+                                            autoFocus
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleSaveRename();
+                                            }}
+                                            className="button-primary px-2 py-1 text-xs"
+                                        >
+                                            Save
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCancelRename();
+                                            }}
+                                            className="button-secondary px-2 py-1 text-xs"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <span onClick={() => handleSelect(opt.value)} className="flex-1 cursor-pointer">
+                                            {opt.label}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            {value === opt.value && <Check size={16} style={{ color: 'var(--success)' }} />}
+                                            {isRenameable && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleStartRename(opt.value, opt.label);
+                                                    }}
+                                                    className="p-1 rounded hover:bg-opacity-20 hover:bg-white transition-colors"
+                                                    title="Rename"
+                                                >
+                                                    <Edit2 size={14} style={{ color: 'var(--text-muted)' }} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
                             </li>
                         ))}
                         {filteredOptions.length === 0 && !canCreate && (

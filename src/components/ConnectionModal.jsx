@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Save, Trash2, History, Zap } from 'lucide-react';
 import CustomSelect from './CustomSelect.jsx';
 
-const ConnectionModal = ({ mode, portId, switchId, switchPort, data, maps, onSave, onDisconnect, onClose, onUserCreate }) => {
+const ConnectionModal = ({ mode, portId, switchId, switchPort, data, maps, onSave, onDisconnect, onClose, onUserCreate, onUserRename, onWallPortRename }) => {
     const isCreateMode = mode === 'create';
     const connection = isCreateMode ? null : data.connections.find(c => c.wallPortId === portId);
     const wallPort = isCreateMode ? null : maps.wallPorts.get(portId);
@@ -173,6 +173,12 @@ const ConnectionModal = ({ mode, portId, switchId, switchPort, data, maps, onSav
                                             value={selectedWallPortId} 
                                             onChange={setSelectedWallPortId} 
                                             placeholder="Select a wall port"
+                                            isRenameable={true}
+                                            onRename={(portId, newName) => {
+                                                // Extract just the port number from "Port X" format
+                                                const portNumber = newName.replace(/^Port\s+/i, '').trim();
+                                                onWallPortRename(portId, portNumber);
+                                            }}
                                         />
                                     </div>
                                 ) : (
@@ -341,6 +347,8 @@ const ConnectionModal = ({ mode, portId, switchId, switchPort, data, maps, onSav
                                     const newUser = onUserCreate(userName); 
                                     setFormData(p => ({ ...p, userId: newUser.id })); 
                                 }}
+                                isRenameable={true}
+                                onRename={onUserRename}
                             />
                         </div>
                         </div>

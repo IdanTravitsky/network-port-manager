@@ -1,25 +1,35 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Network, Settings, Waypoints, Server, LayoutDashboard, Users, Search, MapPin, User, X } from 'lucide-react';
+import { Network, Settings, Waypoints, Server, LayoutDashboard, Users, Search, MapPin, User, X, Clock, Building2 } from 'lucide-react';
 import Breadcrumbs from './Breadcrumbs.jsx';
 import SearchResults from './SearchResults.jsx';
 
-const Header = ({ currentView, setView, data, setSelectedFloorId, breadcrumbs, onBreadcrumbNavigate, maps, onNavigateToSwitch, onNavigateToWallPort }) => {
+const Header = ({ currentView, setView, data, setSelectedFloorId, breadcrumbs, onBreadcrumbNavigate, maps, onNavigateToSwitch, onNavigateToWallPort, onUserUpdate }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
+    const [isSearching, setIsSearching] = useState(false);
     const searchRef = useRef(null);
     
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }, 
         { id: 'wall', label: 'Wall Ports', icon: Waypoints }, 
         { id: 'switch', label: 'Switches', icon: Server }, 
+        { id: 'closet', label: 'Network Closet', icon: Building2 }, 
         { id: 'users', label: 'Users', icon: Users }, 
+        { id: 'latest', label: 'Latest Changes', icon: Clock }, 
         { id: 'settings', label: 'Settings', icon: Settings }
     ];
 
-    // Search results
+    // Search results with loading simulation
     const searchResults = useMemo(() => {
-        if (!searchTerm.trim() || !data) return [];
+        if (!searchTerm.trim() || !data) {
+            setIsSearching(false);
+            return [];
+        }
+        
+        // Simulate search delay for better UX
+        setIsSearching(true);
+        setTimeout(() => setIsSearching(false), 300);
         
         const term = searchTerm.toLowerCase();
         const results = [];
@@ -66,7 +76,7 @@ const Header = ({ currentView, setView, data, setSelectedFloorId, breadcrumbs, o
                 });
             }
         });
-
+        
         return results.slice(0, 10); // Limit to 10 results
     }, [searchTerm, data]);
 
@@ -206,6 +216,7 @@ const Header = ({ currentView, setView, data, setSelectedFloorId, breadcrumbs, o
                 onClose={() => setSelectedUser(null)}
                 onNavigateToSwitch={onNavigateToSwitch}
                 onNavigateToWallPort={onNavigateToWallPort}
+                onUserUpdate={onUserUpdate}
             />
         )}
         </div>

@@ -8,12 +8,15 @@ import Header from './components/Header.jsx';
 import ConnectionModal from './components/ConnectionModal.jsx';
 import ColumnCustomizationModal from './components/ColumnCustomizationModal.jsx';
 import BulkEditModal from './components/BulkEditModal.jsx';
+import SwitchLayoutModal from './components/SwitchLayoutModal.jsx';
 import StyleInjector from './components/StyleInjector.jsx';
+import NetworkClosetView from './components/NetworkClosetView.jsx';
 
 // Import views
 import DashboardView from './views/DashboardView.jsx';
 import WallPortView from './views/WallPortView.jsx';
 import SwitchView from './views/SwitchView.jsx';
+import LatestChangesView from './views/LatestChangesView.jsx';
 import GenericCrudView from './views/GenericCrudView.jsx';
 import SettingsView from './views/SettingsView.jsx';
 
@@ -30,6 +33,45 @@ const DEFAULT_COLUMNS = [
     { id: 'room', label: 'Room', visible: true, isCustom: false, isEditable: true, type: 'text' },
 ];
 
+
+// Activity logging helper
+const logActivity = (setData, message, type = 'general', metadata = {}) => {
+    const timestamp = Date.now();
+    const activity = {
+        id: `activity-${timestamp}`,
+        timestamp,
+        message,
+        type, // general, connection, disconnect, switch_port, etc.
+        metadata // Additional structured data
+    };
+    
+    setData(prev => ({
+        ...prev,
+        activityLog: [activity, ...prev.activityLog.slice(0, 99)] // Keep last 100 activities
+    }));
+};
+
+// Switch port history logging helper
+const logSwitchPortActivity = (setData, switchId, portNumber, action, details, userId = null, wallPortId = null) => {
+    const timestamp = Date.now();
+    const historyEntry = {
+        id: `switch-history-${timestamp}`,
+        timestamp,
+        switchId,
+        portNumber,
+        action, // 'connected', 'disconnected', 'modified', 'link_up', 'link_down'
+        details, // Human readable description
+        userId,
+        wallPortId,
+        metadata: details // Additional structured data
+    };
+    
+    setData(prev => ({
+        ...prev,
+        switchPortHistory: [historyEntry, ...prev.switchPortHistory.slice(0, 199)] // Keep last 200 switch port activities
+    }));
+};
+
 const App = () => {
     const [view, setView] = useState('dashboard');
     const [data, setData] = useState({ 
@@ -41,7 +83,10 @@ const App = () => {
         users: [], 
         columns: DEFAULT_COLUMNS, 
         activityLog: [],
-        vlanColors: []
+        switchPortHistory: [], // New: Track switch port changes specifically
+        switchLayoutTemplates: [], // Switch layout templates for different arrangements
+        vlanColors: [],
+        closetLayouts: {} // Network closet layout configurations per floor
     });
     const [isDataLoaded, setIsDataLoaded] = useState(false);
     const [modal, setModal] = useState(null);
@@ -63,9 +108,9 @@ const App = () => {
                     isPinned: false
                 })),
                 switches: [ 
-                    { id: 'sw1', name: 'F1-Access-A', ip: '10.0.1.200', portCount: 48, floorId: 'f1', categoryId: 'cat1', isPinned: false }, 
-                    { id: 'sw2', name: 'F4-Core-A', ip: '10.0.4.200', portCount: 24, floorId: 'f4', categoryId: 'cat2', isPinned: false }, 
-                    { id: 'sw3', name: 'F4-Core-B', ip: '10.0.4.201', portCount: 24, floorId: 'f4', categoryId: 'cat2', isPinned: false }
+                    { id: 'sw1', name: 'F1-Access-A', ip: '10.0.1.200', portCount: 48, floorId: 'f1', categoryId: 'cat1', isPinned: false, layoutTemplateId: 'sequential_10' }, 
+                    { id: 'sw2', name: 'F4-Core-A', ip: '10.0.4.200', portCount: 24, floorId: 'f4', categoryId: 'cat2', isPinned: false, layoutTemplateId: 'odd_even' }, 
+                    { id: 'sw3', name: 'F4-Core-B', ip: '10.0.4.201', portCount: 24, floorId: 'f4', categoryId: 'cat2', isPinned: false, layoutTemplateId: 'sequential_12' }
                 ],
                 switchCategories: [
                     { id: 'cat1', name: 'Access Switches', color: '#10b981' },
@@ -83,11 +128,79 @@ const App = () => {
                 ],
                 columns: DEFAULT_COLUMNS,
                 activityLog: [{ timestamp: Date.now(), message: "Application initialized." }],
+                switchPortHistory: [], // Initialize empty switch port history
+                switchLayoutTemplates: [
+                    { 
+                        id: 'odd_even', 
+                        name: 'Odd/Even Rows', 
+                        description: 'Traditional layout with odd ports on top, even ports on bottom',
+                        type: 'automatic',
+                        config: { 
+                            type: 'odd_even' 
+                        }
+                    },
+                    { 
+                        id: 'sequential_10', 
+                        name: 'Sequential 10-Port Rows', 
+                        description: '10 ports per row in sequential order (1-10, 11-20, etc.)',
+                        type: 'automatic',
+                        config: { 
+                            type: 'sequential', 
+                            portsPerRow: 10 
+                        }
+                    },
+                    { 
+                        id: 'sequential_12', 
+                        name: 'Sequential 12-Port Rows', 
+                        description: '12 ports per row in sequential order (1-12, 13-24, etc.)',
+                        type: 'automatic',
+                        config: { 
+                            type: 'sequential', 
+                            portsPerRow: 12 
+                        }
+                    },
+                    { 
+                        id: 'sequential_8', 
+                        name: 'Sequential 8-Port Rows', 
+                        description: '8 ports per row in sequential order (1-8, 9-16, etc.)',
+                        type: 'automatic',
+                        config: { 
+                            type: 'sequential', 
+                            portsPerRow: 8 
+                        }
+                    },
+                    { 
+                        id: 'custom', 
+                        name: 'Custom Layout', 
+                        description: 'Manually define port arrangement',
+                        type: 'manual',
+                        config: { 
+                            type: 'custom',
+                            customRows: [] // Will be populated per switch
+                        }
+                    }
+                ],
                 vlanColors: [
                     { vlanId: '100', color: '#34d399' }, // green
                     { vlanId: '200', color: '#60a5fa' }, // blue
                     { vlanId: '300', color: '#f59e0b' }, // amber
-                ]
+                ],
+                closetLayouts: {
+                    'f1': [
+                        {
+                            id: 'patch-panel-1',
+                            type: 'patchPanel',
+                            startPort: 1,
+                            endPort: 24,
+                            portsPerRow: 10
+                        },
+                        {
+                            id: 'switch-1',
+                            type: 'switch',
+                            switchId: 'sw1'
+                        }
+                    ]
+                }
             };
             
             // Data Migration for backward compatibility
@@ -124,10 +237,53 @@ const App = () => {
             initialData.switches = initialData.switches.map(sw => ({
                 ...sw, 
                 categoryId: sw.categoryId || 'cat1', // Default to Access Switches
-                isPinned: sw.isPinned ?? false
+                isPinned: sw.isPinned ?? false,
+                layoutTemplateId: sw.layoutTemplateId || 'odd_even' // Default to current odd/even layout
             }));
 
             if (!initialData.activityLog) initialData.activityLog = [];
+            if (!initialData.switchPortHistory) initialData.switchPortHistory = [];
+            
+            // Add switch layout templates for backward compatibility
+            if (!initialData.switchLayoutTemplates) {
+                initialData.switchLayoutTemplates = [
+                    { 
+                        id: 'odd_even', 
+                        name: 'Odd/Even Rows', 
+                        description: 'Traditional layout with odd ports on top, even ports on bottom',
+                        type: 'automatic',
+                        config: { type: 'odd_even' }
+                    },
+                    { 
+                        id: 'sequential_10', 
+                        name: 'Sequential 10-Port Rows', 
+                        description: '10 ports per row in sequential order (1-10, 11-20, etc.)',
+                        type: 'automatic',
+                        config: { type: 'sequential', portsPerRow: 10 }
+                    },
+                    { 
+                        id: 'sequential_12', 
+                        name: 'Sequential 12-Port Rows', 
+                        description: '12 ports per row in sequential order (1-12, 13-24, etc.)',
+                        type: 'automatic',
+                        config: { type: 'sequential', portsPerRow: 12 }
+                    },
+                    { 
+                        id: 'sequential_8', 
+                        name: 'Sequential 8-Port Rows', 
+                        description: '8 ports per row in sequential order (1-8, 9-16, etc.)',
+                        type: 'automatic',
+                        config: { type: 'sequential', portsPerRow: 8 }
+                    },
+                    { 
+                        id: 'custom', 
+                        name: 'Custom Layout', 
+                        description: 'Manually define port arrangement',
+                        type: 'manual',
+                        config: { type: 'custom', customRows: [] }
+                    }
+                ];
+            }
             
             // Add vlanColors for backward compatibility
             if (!initialData.vlanColors) {
@@ -136,6 +292,26 @@ const App = () => {
                     { vlanId: '200', color: '#60a5fa' }, // blue
                     { vlanId: '300', color: '#f59e0b' }, // amber
                 ];
+            }
+            
+            // Add closetLayouts for backward compatibility
+            if (!initialData.closetLayouts) {
+                initialData.closetLayouts = {
+                    'f1': [
+                        {
+                            id: 'patch-panel-1',
+                            type: 'patchPanel',
+                            startPort: 1,
+                            endPort: 24,
+                            portsPerRow: 10
+                        },
+                        {
+                            id: 'switch-1',
+                            type: 'switch',
+                            switchId: 'sw1'
+                        }
+                    ]
+                };
             }
             
             setData(initialData);
@@ -272,6 +448,46 @@ const App = () => {
             }
             return { ...prev, [type]: newItems, connections: newConnections };
         });
+
+        // Log activity for CRUD operations
+        setTimeout(() => {
+            const typeLabels = {
+                'wallPorts': 'Wall Port',
+                'switches': 'Switch',
+                'users': 'User',
+                'floors': 'Floor',
+                'switchCategories': 'Switch Category',
+                'vlanColors': 'VLAN Color'
+            };
+            const typeLabel = typeLabels[type] || type;
+            const itemName = payload.name || payload.portNumber || payload.ip || payload.label || 'Item';
+
+            let message;
+            let activityType;
+            
+            switch(action) {
+                case 'add':
+                    message = typeLabel + ' created: "' + itemName + '"';
+                    activityType = `${type}_create`;
+                    break;
+                case 'update':
+                    message = typeLabel + ' updated: "' + itemName + '"';
+                    activityType = `${type}_update`;
+                    break;
+                case 'delete':
+                    message = typeLabel + ' deleted: "' + itemName + '"';
+                    activityType = `${type}_delete`;
+                    break;
+            }
+            
+            logActivity(setData, message, activityType, {
+                itemType: type,
+                itemId: payload.id,
+                itemName,
+                action
+            });
+        }, 0);
+        
         setModal(null);
     }, []);
 
@@ -293,21 +509,21 @@ const App = () => {
                         if (key === 'userId') {
                             const oldUser = prevData.users.find(u => u.id === existing[key])?.name || 'Unassigned';
                             const newUser = prevData.users.find(u => u.id === connectionData[key])?.name || 'Unassigned';
-                            if (oldUser !== newUser) changes.push(`user from '${oldUser}' to '${newUser}'`);
+                            if (oldUser !== newUser) changes.push('user from \'' + oldUser + '\' to \'' + newUser + '\'');
                         } else if (key === 'switchId') {
                             const oldSwitch = prevData.switches.find(s => s.id === existing[key])?.name || 'None';
                             const newSwitch = prevData.switches.find(s => s.id === connectionData[key])?.name || 'None';
-                            if (oldSwitch !== newSwitch) changes.push(`switch from '${oldSwitch}' to '${newSwitch}'`);
+                            if (oldSwitch !== newSwitch) changes.push('switch from \'' + oldSwitch + '\' to \'' + newSwitch + '\'');
                         } else {
                             const oldValue = existing[key] || '';
                             const newValue = connectionData[key] || '';
-                            if (oldValue !== newValue) changes.push(`${key} from '${oldValue}' to '${newValue}'`);
+                            if (oldValue !== newValue) changes.push(key + ' from \'' + oldValue + '\' to \'' + newValue + '\'');
                         }
                     }
                 });
                 
                 const historyEntry = changes.length > 0 
-                    ? { timestamp, message: `Updated: ${changes.join(', ')}` }
+                    ? { timestamp, message: 'Updated: ' + changes.join(', ') }
                     : null;
                     
                 const updatedHistory = historyEntry 
@@ -319,6 +535,38 @@ const App = () => {
                         ? { ...c, ...connectionData, history: updatedHistory } 
                         : c
                 );
+                
+                // Log switch port activity for updates
+                if (changes.length > 0 && connectionData.switchId && connectionData.switchPort) {
+                    const wallPort = prevData.wallPorts.find(wp => wp.id === connectionData.wallPortId);
+                    const user = prevData.users.find(u => u.id === connectionData.userId);
+                    const switchName = prevData.switches.find(s => s.id === connectionData.switchId)?.name || 'Unknown Switch';
+                    
+                    setTimeout(() => {
+                        logSwitchPortActivity(
+                            setData,
+                            connectionData.switchId,
+                            connectionData.switchPort,
+                            'modified',
+                            'Port ' + switchName + ':' + connectionData.switchPort + ' modified - ' + changes.join(', '),
+                            connectionData.userId,
+                            connectionData.wallPortId
+                        );
+                        
+                        logActivity(
+                            setData,
+                            'Switch port ' + switchName + ':' + connectionData.switchPort + ' modified - ' + changes.join(', '),
+                            'connection',
+                            {
+                                switchId: connectionData.switchId,
+                                portNumber: connectionData.switchPort,
+                                wallPort: wallPort?.portNumber,
+                                user: user?.name,
+                                changes
+                            }
+                        );
+                    }, 0);
+                }
             } else {
                 // Creating new connection
                 const historyEntry = { timestamp, message: "Connection created" };
@@ -327,6 +575,37 @@ const App = () => {
                     id: `c-${Date.now()}`,
                     history: [historyEntry]
                 }];
+                
+                // Log switch port activity for new connections
+                if (connectionData.switchId && connectionData.switchPort) {
+                    const wallPort = prevData.wallPorts.find(wp => wp.id === connectionData.wallPortId);
+                    const user = prevData.users.find(u => u.id === connectionData.userId);
+                    const switchName = prevData.switches.find(s => s.id === connectionData.switchId)?.name || 'Unknown Switch';
+                    
+                    setTimeout(() => {
+                        logSwitchPortActivity(
+                            setData,
+                            connectionData.switchId,
+                            connectionData.switchPort,
+                            'connected',
+                            'Port ' + switchName + ':' + connectionData.switchPort + ' connected to wall port ' + (wallPort?.portNumber || 'Unknown') + (user ? ' (user: ' + user.name + ')' : ''),
+                            connectionData.userId,
+                            connectionData.wallPortId
+                        );
+                        
+                        logActivity(
+                            setData,
+                            'New connection: Switch port ' + switchName + ':' + connectionData.switchPort + ' connected to wall port ' + (wallPort?.portNumber || 'Unknown') + (user ? ' for ' + user.name : ''),
+                            'connection',
+                            {
+                                switchId: connectionData.switchId,
+                                portNumber: connectionData.switchPort,
+                                wallPort: wallPort?.portNumber,
+                                user: user?.name
+                            }
+                        );
+                    }, 0);
+                }
             }
             
             return { ...prevData, wallPorts: newWallPorts, connections: newConnections };
@@ -344,12 +623,72 @@ const App = () => {
             ...prev, 
             switches: prev.switches.map(s => s.id === switchId ? {...s, ...updatedFields} : s) 
         }));
+
+        // Log switch update activity
+        setTimeout(() => {
+            const switchName = updatedFields.name || 'Switch';
+            const updateDetails = Object.keys(updatedFields).join(', ');
+            logActivity(
+                setData,
+                'Switch updated: "' + switchName + '" (' + updateDetails + ')',
+                'switch_update',
+                {
+                    switchId,
+                    updatedFields,
+                    switchName
+                }
+            );
+        }, 0);
     }, []);
     
     const handleUserCreate = useCallback((userName) => {
         const newUser = { id: `u-${Date.now()}`, name: userName.trim() };
         setData(prev => ({ ...prev, users: [...prev.users, newUser] }));
         return newUser;
+    }, []);
+
+    const handleUserRename = useCallback((userId, newName) => {
+        setData(prev => ({
+            ...prev,
+            users: prev.users.map(user => 
+                user.id === userId ? { ...user, name: newName.trim() } : user
+            )
+        }));
+
+        // Log user rename activity
+        setTimeout(() => {
+            logActivity(
+                setData,
+                `User renamed to: "${newName.trim()}"`,
+                'user_rename',
+                {
+                    userId,
+                    newName: newName.trim()
+                }
+            );
+        }, 0);
+    }, []);
+
+    const handleWallPortRename = useCallback((portId, newName) => {
+        setData(prev => ({
+            ...prev,
+            wallPorts: prev.wallPorts.map(port => 
+                port.id === portId ? { ...port, portNumber: newName.trim() } : port
+            )
+        }));
+
+        // Log wall port rename activity
+        setTimeout(() => {
+            logActivity(
+                setData,
+                'Wall port renamed to: "' + newName.trim() + '"',
+                'wallport_rename',
+                {
+                    portId,
+                    newPortNumber: newName.trim()
+                }
+            );
+        }, 0);
     }, []);
 
     const handleBulkEdit = useCallback((selectedPortIds, updates) => {
@@ -363,12 +702,12 @@ const App = () => {
                         if (connection[key] !== updates[key]) {
                             const oldValue = connection[key] || '';
                             const newValue = updates[key] || '';
-                            changes.push(`${key} from '${oldValue}' to '${newValue}'`);
+                            changes.push(key + ' from "' + oldValue + '" to "' + newValue + '"');
                         }
                     });
                     
                     const historyEntry = changes.length > 0 
-                        ? { timestamp, message: `Bulk edit: ${changes.join(', ')}` }
+                        ? { timestamp, message: 'Bulk edit: ' + changes.join(', ') }
                         : null;
                     
                     const updatedHistory = historyEntry 
@@ -385,14 +724,14 @@ const App = () => {
             const newConnectionsForUnconnectedPorts = selectedPortIds
                 .filter(portId => !connectedPortIds.has(portId))
                 .map(portId => ({
-                    id: `c-${Date.now()}-${Math.random()}`,
+                    id: 'c-' + Date.now() + '-' + Math.random(),
                     wallPortId: portId,
                     ...updates,
                     hasLink: true,
                     connectionType: 'patched',
                     history: [{
                         timestamp: Date.now(),
-                        message: `Bulk edit: Connection created with ${Object.keys(updates).join(', ')}`
+                        message: 'Bulk edit: Connection created with ' + Object.keys(updates).join(', ')
                     }]
                 }));
             
@@ -401,6 +740,22 @@ const App = () => {
                 connections: [...newConnections, ...newConnectionsForUnconnectedPorts] 
             };
         });
+
+        // Log bulk edit activity
+        setTimeout(() => {
+            const fieldNames = Object.keys(updates).join(', ');
+            const portCount = selectedPortIds.length;
+            logActivity(
+                setData,
+                'Bulk edit applied to ' + portCount + ' port' + (portCount > 1 ? 's' : '') + ': ' + fieldNames,
+                'bulk_edit',
+                {
+                    portIds: selectedPortIds,
+                    updates,
+                    portCount
+                }
+            );
+        }, 0);
     }, []);
 
     const handleModalOpen = useCallback((modalConfig) => { setModal(modalConfig); }, []);
@@ -409,7 +764,7 @@ const App = () => {
         const port = dataMaps.wallPorts.get(portId);
         if (!port) return;
 
-        const confirmMessage = `Are you sure you want to delete port ${port.portNumber}? This will also remove any associated connection.`;
+        const confirmMessage = 'Are you sure you want to delete port ' + port.portNumber + '? This will also remove any associated connection.';
         if (window.confirm(confirmMessage)) {
             setData(prev => ({
                 ...prev,
@@ -420,8 +775,65 @@ const App = () => {
     }, [dataMaps.wallPorts]);
 
     const handleDisconnect = useCallback((portId) => {
+        // Find the connection being disconnected for logging
+        const connectionToDisconnect = data.connections.find(c => c.wallPortId === portId);
+        
+        if (connectionToDisconnect) {
+            const wallPort = dataMaps.wallPorts.get(connectionToDisconnect.wallPortId);
+            const user = dataMaps.users.get(connectionToDisconnect.userId);
+            const switchName = dataMaps.switches.get(connectionToDisconnect.switchId)?.name || 'Unknown Switch';
+            
+            // Log the disconnect activity
+            setTimeout(() => {
+                logSwitchPortActivity(
+                    setData,
+                    connectionToDisconnect.switchId,
+                    connectionToDisconnect.switchPort,
+                    'disconnected',
+                    'Port ' + switchName + ':' + connectionToDisconnect.switchPort + ' disconnected from wall port ' + (wallPort?.portNumber || 'Unknown') + (user ? ' (was: ' + user.name + ')' : ''),
+                    connectionToDisconnect.userId,
+                    connectionToDisconnect.wallPortId
+                );
+                
+                logActivity(
+                    setData,
+                    'Disconnected: Switch port ' + switchName + ':' + connectionToDisconnect.switchPort + ' from wall port ' + (wallPort?.portNumber || 'Unknown') + (user ? ' (was: ' + user.name + ')' : ''),
+                    'disconnect',
+                    {
+                        switchId: connectionToDisconnect.switchId,
+                        portNumber: connectionToDisconnect.switchPort,
+                        wallPort: wallPort?.portNumber,
+                        user: user?.name
+                    }
+                );
+            }, 0);
+        }
+        
         updateData('connections', data.connections.filter(c => c.wallPortId !== portId));
-    }, [data.connections, updateData]);
+    }, [data.connections, updateData, dataMaps.wallPorts, dataMaps.users, dataMaps.switches]);
+
+    // User update handler for search results
+    const handleUserUpdate = useCallback((userId, updatedUser) => {
+        setData(prev => ({
+            ...prev,
+            users: prev.users.map(user => 
+                user.id === userId ? updatedUser : user
+            )
+        }));
+        
+        // Log the user update activity
+        setTimeout(() => {
+            logActivity(
+                setData,
+                'User updated: "' + updatedUser.name + '"',
+                'user_update',
+                {
+                    userId: updatedUser.id,
+                    userName: updatedUser.name
+                }
+            );
+        }, 0);
+    }, []);
 
     // View rendering
     const renderView = () => {
@@ -464,6 +876,24 @@ const App = () => {
                     fields={[{key: 'name', label: 'Name'}]} 
                     onSave={(action, payload) => crudHandler('users', action, payload)} 
                 />;
+            case 'closet':
+                return <NetworkClosetView 
+                    data={data} 
+                    maps={dataMaps} 
+                    connectionsByWallPortId={connectionsByWallPortId} 
+                    connectionsBySwitchAndPort={connectionsBySwitchAndPort}
+                    onEditConnection={(portId) => handleModalOpen({type: 'connection', mode: 'edit', portId})} 
+                    onAssignConnection={(switchId, switchPort) => handleModalOpen({type: 'connection', mode: 'create', switchId, switchPort})} 
+                    onDisconnect={handleDisconnect}
+                    onNavigateToSwitch={(connection) => {
+                        handleModalOpen({type: 'connection', mode: 'edit', portId: connection.wallPortId, fromSwitch: true});
+                    }}
+                    onUpdateSwitch={handleUpdateSwitch}
+                    selectedFloorId={selectedFloorId} 
+                    setSelectedFloorId={setSelectedFloorId} 
+                />;
+            case 'latest':
+                return <LatestChangesView data={data} maps={dataMaps} />;
             case 'settings': 
                 return <SettingsView data={data} setData={setData} />;
             default: 
@@ -485,7 +915,9 @@ const App = () => {
                     }} 
                     onClose={() => setModal(null)} 
                     maps={dataMaps} 
-                    onUserCreate={handleUserCreate} 
+                    onUserCreate={handleUserCreate}
+                    onUserRename={handleUserRename}
+                    onWallPortRename={handleWallPortRename}
                     {...modal} 
                 />;
             case 'customizeColumns': 
@@ -527,6 +959,7 @@ const App = () => {
                     maps={dataMaps}
                     onNavigateToSwitch={(connection) => handleModalOpen({type: 'connection', mode: 'edit', portId: connection.wallPortId})}
                     onNavigateToWallPort={(wallPort) => handleModalOpen({type: 'connection', mode: 'edit', portId: wallPort.id})}
+                    onUserUpdate={handleUserUpdate}
                 />
                 <main className="mt-6 glass-card p-8 min-h-[75vh]">
                     {renderView()}

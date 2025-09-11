@@ -1,14 +1,122 @@
-import React, { useState, memo } from 'react';
-import { Download, Pin } from 'lucide-react';
+import React, { useState, memo, useMemo } from 'react';
+import { Download, Pin, Search, X, Grid, Server } from 'lucide-react';
 import SwitchPort from '../components/SwitchPort.jsx';
 import InlineEditableField from '../components/InlineEditableField.jsx';
 import LazyRender from '../components/LazyRender.jsx';
+import SwitchLayoutModal from '../components/SwitchLayoutModal.jsx';
 import { exportToCSV } from '../utils/helpers.js';
+
+// Helper function to calculate switch port layout
+const calculateSwitchPortLayout = (switchData, layoutTemplate) => {
+    if (!switchData || !layoutTemplate) {
+        return { rows: [], allPorts: [] };
+    }
+
+    const allPorts = Array.from({ length: switchData.portCount }, (_, i) => i + 1);
+    let rows = [];
+
+    switch (layoutTemplate.config.type) {
+        case 'odd_even': {
+            const oddPorts = allPorts.filter(p => p % 2 !== 0);
+            const evenPorts = allPorts.filter(p => p % 2 === 0);
+            rows = [oddPorts, evenPorts].filter(row => row.length > 0);
+            break;
+        }
+        case 'sequential': {
+            const portsPerRow = layoutTemplate.config.portsPerRow || 10;
+            for (let i = 0; i < allPorts.length; i += portsPerRow) {
+                rows.push(allPorts.slice(i, i + portsPerRow));
+            }
+            break;
+        }
+        case 'custom': {
+            if (switchData.customLayout && switchData.customLayout.rows) {
+                rows = switchData.customLayout.rows.filter(row => row.length > 0);
+            } else {
+                // Fallback to sequential if no custom layout defined
+                rows = [allPorts];
+            }
+            break;
+        }
+        default:
+            rows = [allPorts];
+    }
+
+    return {
+        rows: rows.filter(row => row.length > 0),
+        allPorts,
+        template: layoutTemplate
+    };
+};
 
 const SwitchView = memo(({ data, maps, connectionsBySwitchAndPort, onUpdateSwitch, onEditConnection, onAssignConnection, onDisconnect, onNavigateToSwitch }) => {
     const { switches } = data;
     const [showIp, setShowIp] = useState(true);
     const [showUser, setShowUser] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [highlightedPort, setHighlightedPort] = useState(null);
+    const [layoutModalSwitch, setLayoutModalSwitch] = useState(null);
+    const [rackView, setRackView] = useState(false);
+
+    // Search for user and find their connection
+    const searchResult = useMemo(() => {
+        if (!searchTerm.trim()) return null;
+        
+        const term = searchTerm.toLowerCase();
+        
+        // Find user by name
+        const user = data.users.find(u => u.name.toLowerCase().includes(term));
+        if (!user) return null;
+        
+        // Find connection for this user
+        const connection = data.connections.find(c => c.userId === user.id);
+        if (!connection || connection.connectionType === 'local_device') return null;
+        
+        // Return the switch and port information
+        return {
+            userId: user.id,
+            userName: user.name,
+            switchId: connection.switchId,
+            switchPort: connection.switchPort,
+            connectionId: connection.id
+        };
+    }, [searchTerm, data.users, data.connections]);
+
+    // Handle search input changes
+    const handleSearch = (value) => {
+        setSearchTerm(value);
+    };
+
+    // Handle search result highlighting and navigation
+    React.useEffect(() => {
+        if (searchResult && searchTerm.trim()) {
+            setHighlightedPort(`${searchResult.switchId}-${searchResult.switchPort}`);
+            // Scroll to the switch
+            setTimeout(() => {
+                const switchElement = document.getElementById(`switch-${searchResult.switchId}`);
+                if (switchElement) {
+                    switchElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 100);
+        } else {
+            setHighlightedPort(null);
+        }
+    }, [searchResult, searchTerm]);
+
+    // Clear search on blur/tab out
+    const handleSearchBlur = () => {
+        // Add a small delay to allow dropdown interactions
+        setTimeout(() => {
+            setSearchTerm('');
+            setHighlightedPort(null);
+        }, 150);
+    };
+
+    // Clear search completely
+    const clearSearch = () => {
+        setSearchTerm('');
+        setHighlightedPort(null);
+    };
 
     const handleExportCSV = () => {
         const exportData = [];
@@ -50,8 +158,50 @@ const SwitchView = memo(({ data, maps, connectionsBySwitchAndPort, onUpdateSwitc
 
     return (
         <div>
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
-                 <h2 className="text-2xl font-bold text-white mb-4 sm:mb-0">Switches</h2>
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                 <h2 className="text-2xl font-bold text-gradient mb-4 sm:mb-0">Switches</h2>
+                 
+                 {/* User Search */}
+                 <div className="flex items-center gap-4">
+                     <div className="relative">
+                         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                         <input 
+                             type="text" 
+                             value={searchTerm}
+                             onChange={(e) => handleSearch(e.target.value)}
+                             onBlur={handleSearchBlur}
+                             placeholder="Search for user..." 
+                             className="input-style pl-10 pr-10 w-64"
+                         />
+                         {searchTerm && (
+                             <button 
+                                 onClick={clearSearch}
+                                 className="absolute right-3 top-1/2 -translate-y-1/2 hover:bg-opacity-20 hover:bg-white p-1 rounded transition-colors"
+                                 title="Clear search"
+                             >
+                                 <X size={16} style={{ color: 'var(--text-muted)' }} />
+                             </button>
+                         )}
+                         {searchTerm && !searchResult && (
+                             <div className="absolute top-full left-0 right-0 mt-1 search-dropdown">
+                                 <div className="px-3 py-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                                     No user found matching "{searchTerm}"
+                                 </div>
+                             </div>
+                         )}
+                         {searchResult && (
+                             <div className="absolute top-full left-0 right-0 mt-1 search-dropdown">
+                                 <div className="px-3 py-2 text-sm">
+                                     <div style={{ color: 'var(--text-primary)' }} className="font-medium">{searchResult.userName}</div>
+                                     <div style={{ color: 'var(--text-muted)' }}>
+                                         Switch: {maps.switches.get(searchResult.switchId)?.name || 'Unknown'} | Port: {searchResult.switchPort}
+                                     </div>
+                                 </div>
+                             </div>
+                         )}
+                     </div>
+                 </div>
+                 
                  <div className="flex items-center gap-4 text-sm">
                      <label className="flex items-center gap-2 cursor-pointer">
                          <input 
@@ -71,6 +221,20 @@ const SwitchView = memo(({ data, maps, connectionsBySwitchAndPort, onUpdateSwitc
                          /> 
                          Show User
                      </label>
+                     <button 
+                         onClick={() => setRackView(!rackView)} 
+                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                             rackView 
+                                 ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
+                                 : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 border border-slate-600'
+                         }`}
+                         title={rackView ? 'Switch to card view' : 'Switch to horizontal rack view'}
+                     >
+                         <Server size={16} />
+                         <span className="hidden sm:inline">
+                             {rackView ? 'Card View' : 'Rack View'}
+                         </span>
+                     </button>
                      <button onClick={handleExportCSV} className="button-secondary p-2.5" title="Export to CSV">
                          <Download size={16} />
                      </button>
@@ -78,21 +242,23 @@ const SwitchView = memo(({ data, maps, connectionsBySwitchAndPort, onUpdateSwitc
             </div>
             <div className="space-y-8" style={{ willChange: 'scroll-position' }}>
                 {switches.map(sw => {
-                    const allPorts = Array.from({ length: sw.portCount }, (_, i) => i + 1);
-                    const oddPorts = [];
-                    const evenPorts = [];
-                    let usedPorts = 0;
+                    // Get layout template for this switch
+                    const layoutTemplate = data.switchLayoutTemplates?.find(t => t.id === sw.layoutTemplateId) || 
+                                          data.switchLayoutTemplates?.find(t => t.id === 'odd_even') ||
+                                          { id: 'odd_even', config: { type: 'odd_even' } };
                     
+                    // Calculate port layout using the template
+                    const portLayout = calculateSwitchPortLayout(sw, layoutTemplate);
+                    
+                    // Calculate used ports count
+                    let usedPorts = 0;
                     for (let i = 1; i <= sw.portCount; i++) {
-                        if (i % 2 !== 0) oddPorts.push(i);
-                        else evenPorts.push(i);
-                        
                         if (connectionsBySwitchAndPort.get(`${sw.id}-${i}`)) {
                             usedPorts++;
                         }
                     }
                     
-                    const switchData = { allPorts, oddPorts, evenPorts, usedPorts };
+                    const switchData = { ...portLayout, usedPorts };
                     const category = maps.switchCategories.get(sw.categoryId);
                     const categoryColor = category?.color || '#10b981';
 
@@ -117,6 +283,7 @@ const SwitchView = memo(({ data, maps, connectionsBySwitchAndPort, onUpdateSwitc
                             }
                         >
                         <div 
+                            id={`switch-${sw.id}`}
                             className="switch-chassis rounded-2xl p-6 shadow-2xl"
                             style={{ borderLeftColor: categoryColor, borderLeftWidth: '6px' }}
                         >
@@ -147,6 +314,13 @@ const SwitchView = memo(({ data, maps, connectionsBySwitchAndPort, onUpdateSwitc
                                 <div className="text-right flex-shrink-0 ml-4">
                                      <div className="flex items-center gap-2 justify-end">
                                         <button
+                                            onClick={() => setLayoutModalSwitch(sw)}
+                                            className="p-1 rounded-full transition-colors text-slate-400 hover:text-cyan-400 hover:bg-cyan-400/20"
+                                            title="Configure port layout"
+                                        >
+                                            <Grid size={14} />
+                                        </button>
+                                        <button
                                             onClick={() => onUpdateSwitch(sw.id, { isPinned: !sw.isPinned })}
                                             className={`p-1 rounded-full transition-colors ${
                                                 sw.isPinned 
@@ -169,49 +343,83 @@ const SwitchView = memo(({ data, maps, connectionsBySwitchAndPort, onUpdateSwitc
                                      <p className="text-xs text-slate-500 mt-1">{switchData.usedPorts} / {sw.portCount} Ports Used</p>
                                 </div>
                             </div>
-                            <div className="overflow-x-auto pb-2 pt-16 -mt-16">
-                                <div className="flex flex-col gap-1 px-2 min-w-max">
-                                    <div className="flex flex-nowrap gap-2">
-                                        {switchData.oddPorts.map(portNum => (
-                                            <SwitchPort 
-                                                key={portNum} 
-                                                portNum={portNum} 
-                                                switchId={sw.id} 
-                                                connection={connectionsBySwitchAndPort.get(`${sw.id}-${portNum}`)} 
-                                                maps={maps} 
-                                                onEdit={onEditConnection} 
-                                                onAssign={onAssignConnection} 
-                                                onDisconnect={onDisconnect}
-                                                onNavigateToSwitch={onNavigateToSwitch}
-                                                showIp={showIp} 
-                                                showUser={showUser}
-                                            />
-                                        ))}
+                            {rackView ? (
+                                // Horizontal Rack View - like real network equipment
+                                <div className="mt-6">
+                                    <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-600">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                            <span className="text-xs text-slate-400 font-mono">RACK UNIT</span>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <div className="flex flex-wrap gap-1 min-w-max">
+                                                {switchData.allPorts.map(portNum => (
+                                                    <SwitchPort 
+                                                        key={portNum} 
+                                                        portNum={portNum} 
+                                                        switchId={sw.id} 
+                                                        connection={connectionsBySwitchAndPort.get(`${sw.id}-${portNum}`)} 
+                                                        maps={maps} 
+                                                        onEdit={onEditConnection} 
+                                                        onAssign={onAssignConnection} 
+                                                        onDisconnect={onDisconnect}
+                                                        onNavigateToSwitch={onNavigateToSwitch}
+                                                        showIp={showIp} 
+                                                        showUser={showUser}
+                                                        isHighlighted={highlightedPort === `${sw.id}-${portNum}`}
+                                                        rackView={true}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="flex flex-nowrap gap-2">
-                                        {switchData.evenPorts.map(portNum => (
-                                            <SwitchPort 
-                                                key={portNum} 
-                                                portNum={portNum} 
-                                                switchId={sw.id} 
-                                                connection={connectionsBySwitchAndPort.get(`${sw.id}-${portNum}`)} 
-                                                maps={maps} 
-                                                onEdit={onEditConnection} 
-                                                onAssign={onAssignConnection} 
-                                                onDisconnect={onDisconnect}
-                                                onNavigateToSwitch={onNavigateToSwitch}
-                                                showIp={showIp} 
-                                                showUser={showUser}
-                                            />
+                                </div>
+                            ) : (
+                                // Original Card View
+                                <div className="overflow-x-auto pb-2 pt-16 -mt-16">
+                                    <div className="flex flex-col gap-1 px-2 min-w-max">
+                                        {switchData.rows.map((row, rowIndex) => (
+                                            <div key={rowIndex} className="flex flex-nowrap gap-2">
+                                                {row.map(portNum => (
+                                                    <SwitchPort 
+                                                        key={portNum} 
+                                                        portNum={portNum} 
+                                                        switchId={sw.id} 
+                                                        connection={connectionsBySwitchAndPort.get(`${sw.id}-${portNum}`)} 
+                                                        maps={maps} 
+                                                        onEdit={onEditConnection} 
+                                                        onAssign={onAssignConnection} 
+                                                        onDisconnect={onDisconnect}
+                                                        onNavigateToSwitch={onNavigateToSwitch}
+                                                        showIp={showIp} 
+                                                        showUser={showUser}
+                                                        isHighlighted={highlightedPort === `${sw.id}-${portNum}`}
+                                                        rackView={false}
+                                                    />
+                                                ))}
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                         </LazyRender>
                     );
                 })}
             </div>
+            
+            {/* Switch Layout Configuration Modal */}
+            {layoutModalSwitch && (
+                <SwitchLayoutModal
+                    switchData={layoutModalSwitch}
+                    layoutTemplates={data.switchLayoutTemplates || []}
+                    onSave={(updatedSwitch) => {
+                        onUpdateSwitch(updatedSwitch.id, updatedSwitch);
+                        setLayoutModalSwitch(null);
+                    }}
+                    onClose={() => setLayoutModalSwitch(null)}
+                />
+            )}
         </div>
     );
 });
