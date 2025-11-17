@@ -37,7 +37,7 @@ As a network administrator, I needed a way to track wall ports, switch connectio
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/network-port-manager.git
+   git clone https://github.com/IdanTravitsky/network-port-manager.git
    cd network-port-manager
    ```
 
