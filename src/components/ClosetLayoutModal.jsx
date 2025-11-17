@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, GripVertical, Trash2, Server, Grid, Save, Cancel } from 'lucide-react';
+import { X, Plus, GripVertical, Trash2, Server, Grid, Save } from 'lucide-react';
 
 const ClosetLayoutModal = ({ 
     isOpen, 
@@ -301,7 +301,7 @@ const ClosetLayoutModal = ({
                         onClick={handleCancel}
                         className="button-secondary flex-1"
                     >
-                        <Cancel size={16} />
+                        <X size={16} />
                         Cancel
                     </button>
                 </div>
