@@ -48,3 +48,4 @@ CLAUDE.md
 .aider*
 .cursor/
 .codeium/
+dist/
